@@ -1,0 +1,16 @@
+# Ignore everything
+*
+
+#
+!.gitignore
+!README.md
+!init.lua
+
+#
+!core/
+!core/actions.lua
+!core/common.lua
+!core/paths_factory.lua
+!core/project.lua
+!core/utils.lua
+!core/workspace.lua
