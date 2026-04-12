@@ -2,196 +2,220 @@ local prj = {}
 
 local utils  = require("premake-bake.core.utils")
 local common = require("premake-bake.core.common")
+local logger = require("premake-bake.core.logger")
 
+--- @class ProjectConfig : LanguageConfig, CompileOptionsConfig, WarningsConfig
+--- @field location?        string|EvaluatePathFn
+--- @field kind             string
+--- @field group?           string
+--- @field srcs?            string[]
+--- @field hdrs?            string[]
+--- @field includes?        string[]
+--- @field configurations?  ConfigurationConfig[]
+--- @field platforms?       PlatformConfig[]
+--- @field systems?         SystemConfig[]
+--- @field toolsets?        ToolsetConfig[]
+--- @field dependencies?    string[]
+
+--- Default configuration values
+--- @type ProjectConfig
 local DEFAULTS = {
-    kind           = "staticlib",
-    srcs           = { "**.h", "**.hpp", "**.c", "**.cpp" },
-    hdrs           = { "**.h", "**.hpp" },
-    includes       = { "." },
+    kind = "staticlib",
 }
 
-local function parse_project_name(raw_project_name)
-    local is_third_party = raw_project_name:match("^third_party:") and true or false
-    local base_name = is_third_party and raw_project_name:sub(13) or raw_project_name
-    local prj_name  = is_third_party and ("third_party." .. base_name) or raw_project_name
-    return base_name, prj_name, is_third_party
+--- @return string, string, boolean # prj_name, prj_base_name, is_third_party
+local function parse_project_name(raw_prj_name)
+    local is_third_party = raw_prj_name:match("^third_party:") and true or false
+    local prj_base_name = is_third_party and raw_prj_name:sub(13) or raw_prj_name
+    local prj_name      = is_third_party and ("third_party."..prj_base_name) or raw_prj_name
+    return prj_name, prj_base_name, is_third_party
 end
 
-function prj.declare(main, raw_project_name, config)
+--- Declares a project inside the current workspace.
+--- @param core         table          -- Core
+--- @param raw_prj_name string         -- Project name
+--- @param config       ProjectConfig? -- User configuration
+function prj.declare(core, raw_prj_name, config)
     config = config or {}
-    local base_name, project_name, is_third_party = parse_project_name(raw_project_name)
+    assert(core._workspace, "Workspace must be defined first.")
 
-    assert(main._workspace, "workspace must be defined first")
-    local ws = main._workspace
-    ws.projects.registry = ws.projects.registry or {}
-    assert(not ws.projects.registry[raw_project_name], "project with same name already defined")
+    local prj_name, prj_base_name, is_third_party = parse_project_name(raw_prj_name)
 
-    local paths = main._workspace.paths
-    local project_location = utils.value_or(config.location, paths:get_project_dir(base_name, is_third_party))
+    -- Initialise project registry if needed
+    core._workspace.projects = core._workspace.projects or {}
+    core._workspace.projects.registry = core._workspace.projects.registry or {}
+    -- Check for duplicate project names
+    assert(not core._workspace.projects.registry[raw_prj_name], "Project with same name is already defined: " .. raw_prj_name)
 
-    project(project_name)
-    location(project_location)
+    logger.verbosef("Setting up project: %s", raw_prj_name)
+    logger.indent_push()
 
-    verbosef("Project: '%s'", project_name)
-    verbosef("  raw_name: %s", raw_project_name)
-    verbosef("  base_name: %s", base_name)
-    verbosef("  location: %s", project_location)
-    verbosef("  is_third_party: %s", is_third_party)
+    -- Resolve project location
+    local paths = core._workspace.paths
+    local prj_location = utils.value_or(
+        utils.eval(config.location),
+        paths:get_project_dir(prj_base_name, is_third_party)
+    )
+    logger.verbosef("Setting location: %s", prj_location)
 
-    -- Basic settings
-    local project_kind = utils.value_or(utils.eval(config.kind), DEFAULTS.kind)
-    kind(project_kind)
+    -- Create the project
+    project(prj_name)
+    location(prj_location)
 
-    verbosef("  kind: %s", project_kind)
+    -- Apply kind and group
+    local prj_kind = utils.value_or(config.kind, DEFAULTS.kind)
+    kind(prj_kind)
+    logger.verbosef("Setting kind: %s", prj_kind)
 
-    local project_group = utils.eval(config.group)
-    if project_group then project().group = project_group end
+    if config.group then
+        project().group = config.group
+        logger.verbosef("Setting group: %s", config.group)
+    end
 
-    verbosef("  group: %s", project().group)
-
-    -- Language & dialects
-    local project_lang = utils.value_or(config.language, DEFAULTS.language)
-    local project_cppdialect = utils.value_or(config.cppdialect, DEFAULTS.cppdialect)
-    local project_cdialect = utils.value_or(config.cdialect, DEFAULTS.cdialect)
-    if project_lang ~= nil then language(project_lang) end
-    if project_cppdialect ~= nil then cppdialect(project_cppdialect) end
-    if project_cdialect ~= nil then cdialect(project_cdialect) end
-
-    verbosef("  language: %s", project_lang)
-    verbosef("  cdialect: %s", project_cdialect)
-    verbosef("  cppdialect: %s", project_cppdialect)
-
-    -- Warnings
-    local project_warn_level = utils.eval(config.warning_level)
-    local project_warn_error = utils.eval(config.warnings_as_errors)
-    if project_warn_level ~= nil then warnings(project_warn_level) end
-    if project_warn_error ~= nil then fatalwarnings { "all" } end
-
-    verbosef("  warnings: %s", project_warn_level)
-    verbosef("  warnings_as_errors: %s", project_warn_error and "yes" or "no")
-
-    -- Project defines/options
-    local project_defines = utils.value_or(utils.eval(config.defines), DEFAULTS.defines)
-    local project_build = utils.value_or(utils.eval(config.buildoptions), DEFAULTS.buildoptions)
-    local project_link = utils.value_or(utils.eval(config.linkoptions), DEFAULTS.linkoptions)
-    if project_defines ~= nil then defines(project_defines) end
-    if project_build ~= nil then buildoptions(project_build) end
-    if project_link ~= nil then linkoptions(project_link) end
-
-    verbosef("  defines: [%s]", table.concat(project_defines or {}, ", "))
-    verbosef("  buildoptions: [%s]", table.concat(project_build or {}, ", "))
-    verbosef("  linkoptions: [%s]", table.concat(project_link or {}, ", "))
-
-    -- Files
-    local function add_files(category)
-        verbosef("  %s:", category)
-
-        local project_category_list = utils.value_or(config[category], DEFAULTS[category])
-        for _, pat in ipairs(project_category_list) do
-            local full = path.isabsolute(pat) and pat or path.join(project_location, pat)
-            files { full }
-
-            verbosef("    - %s", full)
+    local function resolve_files_paths(key)
+        local category_files = utils.value_or(config[key], DEFAULTS[key])
+        local result = {}
+        for _, pat in ipairs(category_files) do
+            local full = path.isabsolute(pat) and pat or path.join(prj_location, pat)
+            table.insert(result, full)
         end
-    end
-    add_files("srcs")
-    add_files("hdrs")
-
-    -- Include directories
-    verbosef("  includes:")
-
-    local project_inc_dirs = {}
-    local project_includes = utils.value_or(config.includes, DEFAULTS.includes)
-    for _, inc in ipairs(project_includes) do
-        local full = path.isabsolute(inc) and inc or path.join(project_location, inc)
-        table.insert(project_inc_dirs, full)
-
-        verbosef("    - %s", full)
+        return result
     end
 
-    includedirs(project_inc_dirs)
+    -- Adding source files
+    local prj_srcs = resolve_files_paths("srcs")
+    if #prj_srcs > 0 then
+        files(prj_srcs)
+        logger.verbosef("Adding source files:")
+        logger.indent_push()
+        logger.verbosef(table.concat(prj_srcs,"\n" .. logger.get_indent()))
+        logger.indent_pop()
+    end
 
-    -- Apply per-configuration/platform/toolset filters
-    common.apply_filtered_settings("configurations", config.configurations, DEFAULTS.configurations)
-    common.apply_filtered_settings("platforms", config.platforms, DEFAULTS.platforms)
-    common.apply_filtered_settings("toolset", config.toolsets, DEFAULTS.toolsets)
+    -- Adding header files
+    local prj_hdrs = resolve_files_paths("hdrs")
+    if #prj_hdrs > 0 then
+        files(prj_hdrs)
+        logger.verbosef("Adding header files:")
+        logger.indent_push()
+        logger.verbosef(table.concat(prj_hdrs,"\n" .. logger.get_indent()))
+        logger.indent_pop()
+    end
 
-    local entry = {
-        raw_project_name = raw_project_name,
-        project_name     = project_name,
-        project_location = project_location,
-        base_name        = base_name,
-        includes         = project_inc_dirs,
-        is_third_party   = is_third_party,
-        dependencies     = utils.eval(config.dependencies) or {},
-        config           = config,
-        resolved         = false,
-        resolving        = false,
+    -- Adding include directories
+    local prj_includes = resolve_files_paths("includes")
+    local dep_includes = prj_includes
+    if #prj_includes > 0 then
+        includedirs(prj_includes)
+        logger.verbosef("Adding includes:")
+        logger.indent_push()
+        logger.verbosef(table.concat(prj_includes,"\n" .. logger.get_indent()))
+        logger.indent_pop()
+    end
+
+    -- Apply language, warnings, compile options
+    common.apply_language(config)
+    common.apply_warnings(config)
+    common.apply_compile_options(config)
+
+    common.apply_named_configs("configurations:",
+        config.configurations, DEFAULTS.configurations,
+        common.apply_configuration
+    )
+
+    -- Per‑platform settings
+    common.apply_named_configs("platforms:",
+        config.platforms, DEFAULTS.platforms,
+        common.apply_platform
+    )
+
+    -- Per‑system settings
+    common.apply_named_configs("system:",
+        config.systems, DEFAULTS.systems,
+        common.apply_system
+    )
+
+    -- Per‑toolset settings
+    common.apply_named_configs("toolset:",
+        config.toolsets, DEFAULTS.toolsets,
+        common.apply_toolset
+    )
+
+    -- Register the project
+    core._workspace.projects.registry[raw_prj_name] = {
+        raw_prj_name   = raw_prj_name,
+        prj_name       = prj_name,
+        base_name      = prj_base_name,
+        is_third_party = is_third_party,
+        kind           = prj_kind,
+        dep_includes   = dep_includes,
+        config         = config,
     }
-    ws.projects.registry[raw_project_name] = entry
 
-    verbosef("Project declaration complete.")
+    logger.indent_pop()
 end
 
-local function apply_dependency(paths, parent_project_name, dep_entry)
-    project(parent_project_name)
-    includedirs(dep_entry.includes)
-    links { dep_entry.project_name }
+local function apply_dependency(core, prj_name, dep_name)
+    logger.indent_push()
+    logger.verbosef("Applying dependency '%s' for project '%s':", dep_name, prj_name)
+    project(prj_name)
+
+    local prj_entry = core._workspace.projects.registry[prj_name]
+    local dep_entry = core._workspace.projects.registry[dep_name]
+
+    if dep_entry.dep_includes and #dep_entry.dep_includes > 0 then
+        includedirs(dep_entry.dep_includes)
+    end
+
+    links(dep_entry.prj_name)
 
     if dep_entry.kind == "SharedLib" then
         postbuildcommands ({
-            "{MKDIR} " .. path.join(paths:get_bin_dir(), dep_entry.project_name),
+            "{MKDIR} " .. path.join(core._workspace.paths:get_bin_dir(), dep_entry.prj_name),
             "{COPYFILE} %{cfg.buildtarget.abspath} " ..
-                path.join(paths:get_bin_dir(), dep_entry.project_name, "%{cfg.buildtarget.name}")
+                path.join(core._workspace.paths:get_bin_dir(), dep_entry.prj_name, "%{cfg.buildtarget.name}")
         })
     end
+
+    logger.indent_pop()
 end
 
-function prj.resolve(main, raw_project_name)
-    assert(main._workspace, "workspace must be defined first")
-    local ws = main._workspace
-    local registry = ws.projects.registry
-    local stack = ws.projects.stack or {}
-    ws.projects.stack = stack
+function prj.resolve(core, raw_prj_name)
+    assert(core._workspace, "Workspace must be defined first.")
+    core._workspace.projects          = core._workspace.projects or {}
+    core._workspace.projects.registry = core._workspace.projects.registry or {}
+    core._workspace.projects.stack    = core._workspace.projects.stack or {}
 
-    local entry = registry[raw_project_name]
-    assert(entry, string.format("Project '%s' is not defined.", raw_project_name))
+    local entry = core._workspace.projects.registry[raw_prj_name]
+    assert(entry, string.format("Project '%s' is not defined.", raw_prj_name))
 
     if entry.resolved then return end
 
-    table.insert(stack, raw_project_name)
+    table.insert(core._workspace.projects.stack, raw_prj_name)
     if entry.resolving then
-        local chain = table.concat(stack, "' -> '")
-        error(string.format("Circular dependency detected: '%s'", chain), 0)
+        local chain = table.concat(core._workspace.projects.stack, ' -> ')
+        error(string.format("Circular dependency detected: %s", chain))
     end
 
     entry.resolving = true
-    verbosef("Resolving dependencies for '%s'", raw_project_name)
+    logger.indent_push()
+    logger.verbosef("Resolving project: %s", raw_prj_name)
 
     -- Resolve all dependencies first
-    for _, dep_name in ipairs(entry.dependencies) do
-        prj.resolve(main, dep_name)
-    end
-
-    -- Now apply them
-    project(entry.project_name)
     local processed = {}
-    for _, dep_name in ipairs(entry.dependencies) do
+    for _, dep_name in ipairs(entry.config.dependencies or {}) do
         if not processed[dep_name] then
-            local dep_entry = registry[dep_name]
-            if dep_entry then
-                apply_dependency(ws.paths, entry.project_name, dep_entry)
-                processed[dep_name] = true
-                verbosef("  applied dependency: %s", dep_name)
-            end
+            logger.verbosef("Resolving dependency for project: %s", raw_prj_name)
+            prj.resolve(core, dep_name)
+            apply_dependency(core, raw_prj_name, dep_name)
         end
     end
 
     entry.resolved  = true
     entry.resolving = false
-    table.remove(stack)
+    table.remove(core._workspace.projects.stack)
 
-    verbosef("Finished resolving %s", raw_project_name)
+    logger.indent_pop()
 end
 
 return prj

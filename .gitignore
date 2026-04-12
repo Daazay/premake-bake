@@ -8,9 +8,11 @@
 
 #
 !core/
-!core/actions.lua
+!core/actions/
+!core/actions/clean.lua
+!core/logger.lua
 !core/common.lua
-!core/paths_factory.lua
+!core/paths_builder.lua
 !core/project.lua
 !core/utils.lua
 !core/workspace.lua

@@ -1,30 +1,30 @@
-local utils = {}
+local m = {}
 
-function utils.value_or(value, default)
+--- Returns the first non‑nil value, or the default if the value is nil.
+function m.value_or(value, default)
     return (value ~= nil) and value or default
 end
 
-function utils.eval(value)
-    if type(value) == "function" then
-        return value()
-    end
-    return value
+--- Evaluates a value if it's a function, otherwise returns the value unchanged.
+function m.eval(value, ...)
+    return (type(value) == "function") and value(...) or value
 end
 
-function utils.keys(t)
-    local keys = {}
+--- Returns a list (array) of all keys present in a table.
+function m.get_keys(t)
+    local res = {}
     for k, _ in pairs(t) do
-        table.insert(keys, k)
+        table.insert(res, k)
     end
-    return keys
+    return res
 end
 
-function utils.merge(base, overrides)
+function m.merge(base, overrides, recursive)
     local result = {}
-    for k, v in pairs(base) do result[k] = v end
-    for k, v in pairs(overrides) do
-        if type(v) == "table" and type(base[k]) == "table" then
-            result[k] = utils.merge(base[k], v)
+    for k, v in pairs(base or {}) do result[k] = v end
+    for k, v in pairs(overrides or {}) do
+        if recursive and type(v) == "table" and type(base[k]) == "table" then
+            result[k] = m.merge(base[k], v)
         else
             result[k] = v
         end
@@ -32,4 +32,4 @@ function utils.merge(base, overrides)
     return result
 end
 
-return utils
+return m
