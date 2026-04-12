@@ -5,13 +5,16 @@ local paths_builder = require("premake-bake.core.paths_builder")
 local common        = require("premake-bake.core.common")
 local logger        = require("premake-bake.core.logger")
 
---- @class WorkspaceConfig : LanguageConfig, CompileOptionsConfig, WarningsConfig
---- @field location?      string|EvaluatePathFn
---- @field configurations ConfigurationConfig[]
---- @field platforms      PlatformConfig[]
---- @field systems?       SystemConfig[]
---- @field toolsets?      ToolsetConfig[]
---- @field paths?         PathsConfig
+--- @class WorkspaceConfig
+--- @field location?        string|EvaluatePathFn
+--- @field configurations   ConfigurationConfig[]
+--- @field platforms        PlatformConfig[]
+--- @field systems?         SystemConfig[]
+--- @field toolsets?        ToolsetConfig[]
+--- @field lang?            LanguageConfig
+--- @field warnings?        WarningsConfig
+--- @field compileoptions?  CompileOptionsConfig
+--- @field paths?           PathsConfig
 
 --- Default configuration values
 --- @type WorkspaceConfig
@@ -23,13 +26,15 @@ local DEFAULTS = {
     platforms = {
         x86_64 = { architecture = "x86_64" }
     },
-    systems            = {},
-    toolsets           = {},
-    language           = "c++",
-    cdialect           = "c23",
-    cppdialect         = "c++23",
-    warnings_level     = "default",
-    warnings_as_errors = false,
+    lang = {
+        language   = "c++",
+        cdialect   = "c23",
+        cppdialect = "c++23",
+    },
+    warnings = {
+        warnings_level = "default",
+        warnings_as_errors = false,
+    }
 }
 
 --- @param core     table
@@ -75,9 +80,10 @@ function m.setup(core, ws_name, config)
     logger.verbosef("Setting targetdir: %s", ws_targetdir:gsub("%%", "%%%%"))
     logger.verbosef("Setting objdir: %s", ws_objdir:gsub("%%", "%%%%"))
 
-    -- Apply top‑level language and warning.
-    common.apply_language(config)
-    common.apply_warnings(config)
+    -- Apply language, warnings, compile options
+    common.apply_language(utils.merge(DEFAULTS.lang, config.lang))
+    common.apply_warnings(utils.merge(DEFAULTS.warnings, config.warnings))
+    common.apply_compile_options(utils.merge(DEFAULTS.compileoptions, config.compileoptions))
 
     -- Apply configurations.
     common.apply_named_configs("configurations:",
@@ -108,10 +114,7 @@ function m.setup(core, ws_name, config)
         config   = config,
         location = ws_location,
         paths    = paths,
-        projects = {
-            registry = {},
-            stack    = {}
-        }
+        projects = { registry = {}, stack = {} }
     }
 
     core._workspace = core._workspaces[ws_name]

@@ -4,18 +4,21 @@ local utils  = require("premake-bake.core.utils")
 local common = require("premake-bake.core.common")
 local logger = require("premake-bake.core.logger")
 
---- @class ProjectConfig : LanguageConfig, CompileOptionsConfig, WarningsConfig
+--- @class ProjectConfig
 --- @field location?        string|EvaluatePathFn
 --- @field kind             string
 --- @field group?           string
+--- @field lang?            LanguageConfig
+--- @field warnings?        WarningsConfig
+--- @field compileoptions?  CompileOptionsConfig
 --- @field srcs?            string[]
 --- @field hdrs?            string[]
 --- @field includes?        string[]
+--- @field dependencies?    string[]
 --- @field configurations?  ConfigurationConfig[]
 --- @field platforms?       PlatformConfig[]
 --- @field systems?         SystemConfig[]
 --- @field toolsets?        ToolsetConfig[]
---- @field dependencies?    string[]
 
 --- Default configuration values
 --- @type ProjectConfig
@@ -26,8 +29,8 @@ local DEFAULTS = {
 --- @return string, string, boolean # prj_name, prj_base_name, is_third_party
 local function parse_project_name(raw_prj_name)
     local is_third_party = raw_prj_name:match("^third_party:") and true or false
-    local prj_base_name = is_third_party and raw_prj_name:sub(13) or raw_prj_name
-    local prj_name      = is_third_party and ("third_party."..prj_base_name) or raw_prj_name
+    local prj_base_name  = is_third_party and raw_prj_name:sub(13) or raw_prj_name
+    local prj_name       = is_third_party and ("third_party."..prj_base_name) or raw_prj_name
     return prj_name, prj_base_name, is_third_party
 end
 
@@ -114,30 +117,30 @@ function prj.declare(core, raw_prj_name, config)
     end
 
     -- Apply language, warnings, compile options
-    common.apply_language(config)
-    common.apply_warnings(config)
-    common.apply_compile_options(config)
+    common.apply_language(config.lang)
+    common.apply_warnings(config.warnings)
+    common.apply_compile_options(config.compileoptions)
 
     common.apply_named_configs("configurations:",
-        config.configurations, DEFAULTS.configurations,
+        config.configurations, nil,
         common.apply_configuration
     )
 
     -- Per‑platform settings
     common.apply_named_configs("platforms:",
-        config.platforms, DEFAULTS.platforms,
+        config.platforms, nil,
         common.apply_platform
     )
 
     -- Per‑system settings
     common.apply_named_configs("system:",
-        config.systems, DEFAULTS.systems,
+        config.systems, nil,
         common.apply_system
     )
 
     -- Per‑toolset settings
     common.apply_named_configs("toolset:",
-        config.toolsets, DEFAULTS.toolsets,
+        config.toolsets, nil,
         common.apply_toolset
     )
 
